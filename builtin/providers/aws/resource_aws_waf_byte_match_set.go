@@ -69,21 +69,22 @@ func resourceAwsWafByteMatchSetCreate(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[INFO] Creating ByteMatchSet: %s", d.Get("name").(string))
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	res, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 	}
 
 	params := &waf.CreateByteMatchSetInput{
-		ChangeToken: res.ChangeToken,
+		ChangeToken: token,
 		Name:        aws.String(d.Get("name").(string)),
 	}
 
 	resp, err := conn.CreateByteMatchSet(params)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return err
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error creating ByteMatchSet: {{err}}", err)
 	}
@@ -134,17 +135,19 @@ func resourceAwsWafByteMatchSetDelete(d *schema.ResourceData, meta interface{}) 
 		return errwrap.Wrapf("[ERROR] Error deleting ByteMatchSet: {{err}}", err)
 	}
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 
 	req := &waf.DeleteByteMatchSetInput{
-		ChangeToken:    resp.ChangeToken,
+		ChangeToken:    token,
 		ByteMatchSetId: aws.String(d.Id()),
 	}
 
 	_, err = conn.DeleteByteMatchSet(req)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return err
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error deleting ByteMatchSet: {{err}}", err)
 	}
@@ -155,15 +158,14 @@ func resourceAwsWafByteMatchSetDelete(d *schema.ResourceData, meta interface{}) 
 func updateByteMatchSetResource(d *schema.ResourceData, meta interface{}, ChangeAction string) error {
 	conn := meta.(*AWSClient).wafconn
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 	}
 
 	req := &waf.UpdateByteMatchSetInput{
-		ChangeToken:    resp.ChangeToken,
+		ChangeToken:    token,
 		ByteMatchSetId: aws.String(d.Id()),
 	}
 
@@ -183,6 +185,10 @@ func updateByteMatchSetResource(d *schema.ResourceData, meta interface{}, Change
 	}
 
 	_, err = conn.UpdateByteMatchSet(req)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return err
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error updating ByteMatchSet: {{err}}", err)
 	}

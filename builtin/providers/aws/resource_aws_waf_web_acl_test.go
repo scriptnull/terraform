@@ -159,16 +159,14 @@ func testAccCheckAWSWafWebAclDisappears(v *waf.WebACL) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		// ChangeToken
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateWebACLInput{
-			ChangeToken: resp.ChangeToken,
+			ChangeToken: token,
 			WebACLId:    v.WebACLId,
 		}
 
@@ -185,20 +183,29 @@ func testAccCheckAWSWafWebAclDisappears(v *waf.WebACL) resource.TestCheckFunc {
 		}
 
 		_, err = conn.UpdateWebACL(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return fmt.Errorf("Error Updating WAF ACL: %s", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token for waf ACL: %s", err)
 		}
 
 		opts := &waf.DeleteWebACLInput{
-			ChangeToken: resp.ChangeToken,
+			ChangeToken: token,
 			WebACLId:    v.WebACLId,
 		}
-		if _, err := conn.DeleteWebACL(opts); err != nil {
+		_, err = conn.DeleteWebACL(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil

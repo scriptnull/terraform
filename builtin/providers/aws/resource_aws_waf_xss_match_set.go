@@ -61,21 +61,22 @@ func resourceAwsWafXssMatchSetCreate(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[INFO] Creating XssMatchSet: %s", d.Get("name").(string))
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	res, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 	}
 
 	params := &waf.CreateXssMatchSetInput{
-		ChangeToken: res.ChangeToken,
+		ChangeToken: token,
 		Name:        aws.String(d.Get("name").(string)),
 	}
 
 	resp, err := conn.CreateXssMatchSet(params)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error creating XssMatchSet: {{err}}", err)
 	}
@@ -126,17 +127,19 @@ func resourceAwsWafXssMatchSetDelete(d *schema.ResourceData, meta interface{}) e
 		return errwrap.Wrapf("[ERROR] Error deleting XssMatchSet: {{err}}", err)
 	}
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 
 	req := &waf.DeleteXssMatchSetInput{
-		ChangeToken:   resp.ChangeToken,
+		ChangeToken:   token,
 		XssMatchSetId: aws.String(d.Id()),
 	}
 
 	_, err = conn.DeleteXssMatchSet(req)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error deleting XssMatchSet: {{err}}", err)
 	}
@@ -147,15 +150,14 @@ func resourceAwsWafXssMatchSetDelete(d *schema.ResourceData, meta interface{}) e
 func updateXssMatchSetResource(d *schema.ResourceData, meta interface{}, ChangeAction string) error {
 	conn := meta.(*AWSClient).wafconn
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 	}
 
 	req := &waf.UpdateXssMatchSetInput{
-		ChangeToken:   resp.ChangeToken,
+		ChangeToken:   token,
 		XssMatchSetId: aws.String(d.Id()),
 	}
 
@@ -173,6 +175,10 @@ func updateXssMatchSetResource(d *schema.ResourceData, meta interface{}, ChangeA
 	}
 
 	_, err = conn.UpdateXssMatchSet(req)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error updating XssMatchSet: {{err}}", err)
 	}

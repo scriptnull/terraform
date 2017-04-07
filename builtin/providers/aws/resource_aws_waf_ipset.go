@@ -46,20 +46,22 @@ func resourceAwsWafIPSet() *schema.Resource {
 func resourceAwsWafIPSetCreate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).wafconn
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	res, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return fmt.Errorf("Error getting change token: %s", err)
 	}
 
 	params := &waf.CreateIPSetInput{
-		ChangeToken: res.ChangeToken,
+		ChangeToken: token,
 		Name:        aws.String(d.Get("name").(string)),
 	}
 
 	resp, err := conn.CreateIPSet(params)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return err
 	}
@@ -117,18 +119,22 @@ func resourceAwsWafIPSetDelete(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error Removing IPSetDescriptors: %s", err)
 	}
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
+	if err != nil {
+		return err
+	}
 
 	req := &waf.DeleteIPSetInput{
-		ChangeToken: resp.ChangeToken,
+		ChangeToken: token,
 		IPSetId:     aws.String(d.Id()),
 	}
 	log.Printf("[INFO] Deleting WAF IPSet")
 	_, err = conn.DeleteIPSet(req)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return fmt.Errorf("Error Deleting WAF IPSet: %s", err)
 	}
@@ -139,16 +145,14 @@ func resourceAwsWafIPSetDelete(d *schema.ResourceData, meta interface{}) error {
 func updateIPSetResource(d *schema.ResourceData, meta interface{}, ChangeAction string) error {
 	conn := meta.(*AWSClient).wafconn
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return fmt.Errorf("Error getting change token: %s", err)
 	}
 
 	req := &waf.UpdateIPSetInput{
-		ChangeToken: resp.ChangeToken,
+		ChangeToken: token,
 		IPSetId:     aws.String(d.Id()),
 	}
 
@@ -166,6 +170,10 @@ func updateIPSetResource(d *schema.ResourceData, meta interface{}, ChangeAction 
 	}
 
 	_, err = conn.UpdateIPSet(req)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return fmt.Errorf("Error Updating WAF IPSet: %s", err)
 	}

@@ -69,21 +69,22 @@ func resourceAwsWafSizeConstraintSetCreate(d *schema.ResourceData, meta interfac
 
 	log.Printf("[INFO] Creating SizeConstraintSet: %s", d.Get("name").(string))
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	res, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 	}
 
 	params := &waf.CreateSizeConstraintSetInput{
-		ChangeToken: res.ChangeToken,
+		ChangeToken: token,
 		Name:        aws.String(d.Get("name").(string)),
 	}
 
 	resp, err := conn.CreateSizeConstraintSet(params)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error creating SizeConstraintSet: {{err}}", err)
 	}
@@ -134,12 +135,11 @@ func resourceAwsWafSizeConstraintSetDelete(d *schema.ResourceData, meta interfac
 		return errwrap.Wrapf("[ERROR] Error deleting SizeConstraintSet: {{err}}", err)
 	}
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 
 	req := &waf.DeleteSizeConstraintSetInput{
-		ChangeToken:         resp.ChangeToken,
+		ChangeToken:         token,
 		SizeConstraintSetId: aws.String(d.Id()),
 	}
 
@@ -155,15 +155,14 @@ func resourceAwsWafSizeConstraintSetDelete(d *schema.ResourceData, meta interfac
 func updateSizeConstraintSetResource(d *schema.ResourceData, meta interface{}, ChangeAction string) error {
 	conn := meta.(*AWSClient).wafconn
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 	}
 
 	req := &waf.UpdateSizeConstraintSetInput{
-		ChangeToken:         resp.ChangeToken,
+		ChangeToken:         token,
 		SizeConstraintSetId: aws.String(d.Id()),
 	}
 
@@ -183,6 +182,10 @@ func updateSizeConstraintSetResource(d *schema.ResourceData, meta interface{}, C
 	}
 
 	_, err = conn.UpdateSizeConstraintSet(req)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return errwrap.Wrapf("[ERROR] Error updating SizeConstraintSet: {{err}}", err)
 	}

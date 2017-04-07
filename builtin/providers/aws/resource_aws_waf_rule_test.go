@@ -99,16 +99,14 @@ func testAccCheckAWSWafRuleDisappears(v *waf.Rule) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		// ChangeToken
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateRuleInput{
-			ChangeToken: resp.ChangeToken,
+			ChangeToken: token,
 			RuleId:      v.RuleId,
 		}
 
@@ -125,20 +123,29 @@ func testAccCheckAWSWafRuleDisappears(v *waf.Rule) resource.TestCheckFunc {
 		}
 
 		_, err = conn.UpdateRule(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return fmt.Errorf("Error Updating WAF Rule: %s", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token for waf Rule: %s", err)
 		}
 
 		opts := &waf.DeleteRuleInput{
-			ChangeToken: resp.ChangeToken,
+			ChangeToken: token,
 			RuleId:      v.RuleId,
 		}
-		if _, err := conn.DeleteRule(opts); err != nil {
+		_, err = conn.DeleteRule(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil

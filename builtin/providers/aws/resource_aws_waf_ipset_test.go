@@ -100,16 +100,14 @@ func testAccCheckAWSWafIPSetDisappears(v *waf.IPSet) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		// ChangeToken
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateIPSetInput{
-			ChangeToken: resp.ChangeToken,
+			ChangeToken: token,
 			IPSetId:     v.IPSetId,
 		}
 
@@ -125,20 +123,29 @@ func testAccCheckAWSWafIPSetDisappears(v *waf.IPSet) resource.TestCheckFunc {
 		}
 
 		_, err = conn.UpdateIPSet(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return fmt.Errorf("Error Updating WAF IPSet: %s", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token for waf IPSet: %s", err)
 		}
 
 		opts := &waf.DeleteIPSetInput{
-			ChangeToken: resp.ChangeToken,
+			ChangeToken: token,
 			IPSetId:     v.IPSetId,
 		}
-		if _, err := conn.DeleteIPSet(opts); err != nil {
+		_, err = conn.DeleteIPSet(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil

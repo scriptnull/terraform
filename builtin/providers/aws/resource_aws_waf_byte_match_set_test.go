@@ -14,6 +14,40 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 )
 
+func TestAccAWSWaf_all(t *testing.T) {
+	cases := map[string]func(*testing.T){
+		"ByteMatchSet_basic":                      TestAccAWSWafByteMatchSet_basic,
+		"ByteMatchSet_changeNameForceNew":         TestAccAWSWafByteMatchSet_changeNameForceNew,
+		"ByteMatchSet_disappears":                 TestAccAWSWafByteMatchSet_disappears,
+		"IPSet_basic":                             TestAccAWSWafIPSet_basic,
+		"IPSet_disappears":                        TestAccAWSWafIPSet_disappears,
+		"IPSet_changeNameForceNew":                TestAccAWSWafIPSet_changeNameForceNew,
+		"Rule_basic":                              TestAccAWSWafRule_basic,
+		"Rule_changeNameForceNew":                 TestAccAWSWafRule_changeNameForceNew,
+		"Rule_disappears":                         TestAccAWSWafRule_disappears,
+		"SizeConstraintSet_basic":                 TestAccAWSWafSizeConstraintSet_basic,
+		"SizeConstraintSet_changeNameForceNew":    TestAccAWSWafSizeConstraintSet_changeNameForceNew,
+		"SizeConstraintSet_disappears":            TestAccAWSWafSizeConstraintSet_disappears,
+		"SqlInjectionMatchSet_basic":              TestAccAWSWafSqlInjectionMatchSet_basic,
+		"SqlInjectionMatchSet_changeNameForceNew": TestAccAWSWafSqlInjectionMatchSet_changeNameForceNew,
+		"SqlInjectionMatchSet_disappears":         TestAccAWSWafSqlInjectionMatchSet_disappears,
+		"WebAcl_basic":                            TestAccAWSWafWebAcl_basic,
+		"WebAcl_changeNameForceNew":               TestAccAWSWafWebAcl_changeNameForceNew,
+		"WebAcl_changeDefaultAction":              TestAccAWSWafWebAcl_changeDefaultAction,
+		"WebAcl_disappears":                       TestAccAWSWafWebAcl_disappears,
+		"XssMatchSet_basic":                       TestAccAWSWafXssMatchSet_basic,
+		"XssMatchSet_changeNameForceNew":          TestAccAWSWafXssMatchSet_changeNameForceNew,
+		"XssMatchSet_disappears":                  TestAccAWSWafXssMatchSet_disappears,
+	}
+	for name, tf := range cases {
+		tf := tf
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tf(t)
+		})
+	}
+}
+
 func TestAccAWSWafByteMatchSet_basic(t *testing.T) {
 	var v waf.ByteMatchSet
 	byteMatchSet := fmt.Sprintf("byteMatchSet-%s", acctest.RandString(5))
@@ -96,16 +130,14 @@ func testAccCheckAWSWafByteMatchSetDisappears(v *waf.ByteMatchSet) resource.Test
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		// ChangeToken
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateByteMatchSetInput{
-			ChangeToken:    resp.ChangeToken,
+			ChangeToken:    token,
 			ByteMatchSetId: v.ByteMatchSetId,
 		}
 
@@ -123,20 +155,29 @@ func testAccCheckAWSWafByteMatchSetDisappears(v *waf.ByteMatchSet) resource.Test
 		}
 
 		_, err = conn.UpdateByteMatchSet(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error updating ByteMatchSet: {{err}}", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 		}
 
 		opts := &waf.DeleteByteMatchSetInput{
-			ChangeToken:    resp.ChangeToken,
+			ChangeToken:    token,
 			ByteMatchSetId: v.ByteMatchSetId,
 		}
-		if _, err := conn.DeleteByteMatchSet(opts); err != nil {
+		_, err = conn.DeleteByteMatchSet(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil

@@ -96,15 +96,14 @@ func testAccCheckAWSWafXssMatchSetDisappears(v *waf.XssMatchSet) resource.TestCh
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateXssMatchSetInput{
-			ChangeToken:   resp.ChangeToken,
+			ChangeToken:   token,
 			XssMatchSetId: v.XssMatchSetId,
 		}
 
@@ -119,20 +118,29 @@ func testAccCheckAWSWafXssMatchSetDisappears(v *waf.XssMatchSet) resource.TestCh
 			req.Updates = append(req.Updates, xssMatchTupleUpdate)
 		}
 		_, err = conn.UpdateXssMatchSet(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error updating XssMatchSet: {{err}}", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 		}
 
 		opts := &waf.DeleteXssMatchSetInput{
-			ChangeToken:   resp.ChangeToken,
+			ChangeToken:   token,
 			XssMatchSetId: v.XssMatchSetId,
 		}
-		if _, err := conn.DeleteXssMatchSet(opts); err != nil {
+		_, err = conn.DeleteXssMatchSet(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil

@@ -96,15 +96,14 @@ func testAccCheckAWSWafSqlInjectionMatchSetDisappears(v *waf.SqlInjectionMatchSe
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateSqlInjectionMatchSetInput{
-			ChangeToken:            resp.ChangeToken,
+			ChangeToken:            token,
 			SqlInjectionMatchSetId: v.SqlInjectionMatchSetId,
 		}
 
@@ -119,20 +118,29 @@ func testAccCheckAWSWafSqlInjectionMatchSetDisappears(v *waf.SqlInjectionMatchSe
 			req.Updates = append(req.Updates, sqlInjectionMatchTupleUpdate)
 		}
 		_, err = conn.UpdateSqlInjectionMatchSet(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error updating SqlInjectionMatchSet: {{err}}", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 		}
 
 		opts := &waf.DeleteSqlInjectionMatchSetInput{
-			ChangeToken:            resp.ChangeToken,
+			ChangeToken:            token,
 			SqlInjectionMatchSetId: v.SqlInjectionMatchSetId,
 		}
-		if _, err := conn.DeleteSqlInjectionMatchSet(opts); err != nil {
+		_, err = conn.DeleteSqlInjectionMatchSet(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil

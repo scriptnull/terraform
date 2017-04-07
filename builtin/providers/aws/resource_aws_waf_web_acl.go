@@ -77,22 +77,24 @@ func resourceAwsWafWebAcl() *schema.Resource {
 func resourceAwsWafWebAclCreate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).wafconn
 
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
-
-	res, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return fmt.Errorf("Error getting change token: %s", err)
 	}
 
 	params := &waf.CreateWebACLInput{
-		ChangeToken:   res.ChangeToken,
+		ChangeToken:   token,
 		DefaultAction: expandDefaultAction(d),
 		MetricName:    aws.String(d.Get("metric_name").(string)),
 		Name:          aws.String(d.Get("name").(string)),
 	}
 
 	resp, err := conn.CreateWebACL(params)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return err
 	}
@@ -144,18 +146,20 @@ func resourceAwsWafWebAclDelete(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error Removing WAF ACL Rules: %s", err)
 	}
 
-	var ct *waf.GetChangeTokenInput
-
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 
 	req := &waf.DeleteWebACLInput{
-		ChangeToken: resp.ChangeToken,
+		ChangeToken: token,
 		WebACLId:    aws.String(d.Id()),
 	}
 
 	log.Printf("[INFO] Deleting WAF ACL")
 	_, err = conn.DeleteWebACL(req)
-
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return fmt.Errorf("Error Deleting WAF ACL: %s", err)
 	}
@@ -164,16 +168,15 @@ func resourceAwsWafWebAclDelete(d *schema.ResourceData, meta interface{}) error 
 
 func updateWebAclResource(d *schema.ResourceData, meta interface{}, ChangeAction string) error {
 	conn := meta.(*AWSClient).wafconn
-	// ChangeToken
-	var ct *waf.GetChangeTokenInput
 
-	resp, err := conn.GetChangeToken(ct)
+	wt := newWAFToken(conn, "global")
+	token, err := wt.Acquire()
 	if err != nil {
 		return fmt.Errorf("Error getting change token: %s", err)
 	}
 
 	req := &waf.UpdateWebACLInput{
-		ChangeToken: resp.ChangeToken,
+		ChangeToken: token,
 		WebACLId:    aws.String(d.Id()),
 	}
 
@@ -196,6 +199,10 @@ func updateWebAclResource(d *schema.ResourceData, meta interface{}, ChangeAction
 		req.Updates = append(req.Updates, aclRuleUpdate)
 	}
 	_, err = conn.UpdateWebACL(req)
+	wtErr := wt.Release()
+	if wtErr != nil {
+		return wtErr
+	}
 	if err != nil {
 		return fmt.Errorf("Error Updating WAF ACL: %s", err)
 	}

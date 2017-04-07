@@ -96,15 +96,14 @@ func testAccCheckAWSWafSizeConstraintSetDisappears(v *waf.SizeConstraintSet) res
 	return func(s *terraform.State) error {
 		conn := testAccProvider.Meta().(*AWSClient).wafconn
 
-		var ct *waf.GetChangeTokenInput
-
-		resp, err := conn.GetChangeToken(ct)
+		wt := newWAFToken(conn, "global")
+		token, err := wt.Acquire()
 		if err != nil {
 			return fmt.Errorf("Error getting change token: %s", err)
 		}
 
 		req := &waf.UpdateSizeConstraintSetInput{
-			ChangeToken:         resp.ChangeToken,
+			ChangeToken:         token,
 			SizeConstraintSetId: v.SizeConstraintSetId,
 		}
 
@@ -121,20 +120,29 @@ func testAccCheckAWSWafSizeConstraintSetDisappears(v *waf.SizeConstraintSet) res
 			req.Updates = append(req.Updates, sizeConstraintUpdate)
 		}
 		_, err = conn.UpdateSizeConstraintSet(req)
+		wtErr := wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error updating SizeConstraintSet: {{err}}", err)
 		}
 
-		resp, err = conn.GetChangeToken(ct)
+		token, err = wt.Acquire()
 		if err != nil {
 			return errwrap.Wrapf("[ERROR] Error getting change token: {{err}}", err)
 		}
 
 		opts := &waf.DeleteSizeConstraintSetInput{
-			ChangeToken:         resp.ChangeToken,
+			ChangeToken:         token,
 			SizeConstraintSetId: v.SizeConstraintSetId,
 		}
-		if _, err := conn.DeleteSizeConstraintSet(opts); err != nil {
+		_, err = conn.DeleteSizeConstraintSet(opts)
+		wtErr = wt.Release()
+		if wtErr != nil {
+			return wtErr
+		}
+		if err != nil {
 			return err
 		}
 		return nil
